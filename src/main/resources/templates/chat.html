@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat App</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+<div class="flex h-screen relative">
+    <!-- Sidebar -->
+    <aside class="w-1/4 bg-white shadow-md p-4 flex flex-col">
+        <h2 class="text-lg font-bold mb-4 id-user" th:text="'Xin chào, ' + ${session.user.username}" th:data-id="${session.user.id}">Xin chào</h2>
+
+        <!-- User list -->
+        <div class="mb-6">
+            <h3 class="text-sm font-semibold text-gray-600 mb-2">Danh sách người dùng</h3>
+            <ul class="space-y-2">
+                <li th:each="u : ${users}" th:data-id="${u.id}" class="user-item flex items-center space-x-3 p-2 hover:bg-gray-100 rounded cursor-pointer transition">
+                    <img th:if="${u.avatarUrl != null}" th:src="@{${u.avatarUrl}}" class="w-8 h-8 rounded-full"/>
+                    <img th:unless="${u.avatarUrl != null}" th:src="@{/image/default.png}" class="w-8 h-8 rounded-full"/>
+                    <span th:text="${u.username}" class="text-sm font-medium">Username</span>
+                </li>
+            </ul>
+        </div>
+        <!-- Logout -->
+        <a href="/logout" class="mt-auto text-blue-500 text-sm hover:underline">Đăng xuất</a>
+    </aside>
+
+    <!-- Main content -->
+    <main class="flex-1 p-6 space-y-6">
+        <!-- Group creation form -->
+        <section class="bg-white p-4 rounded shadow">
+            <h4 class="text-md font-bold mb-2">Tạo nhóm mới</h4>
+            <form id="createGroupForm" class="flex flex-col sm:flex-row sm:space-x-4 space-y-2 sm:space-y-0">
+                <input type="text" id="groupName" placeholder="Tên nhóm" required class="flex-1 px-3 py-2 border rounded"/>
+                <input type="text" id="groupMembers" placeholder="ID thành viên, cách nhau bằng dấu phẩy" class="flex-1 px-3 py-2 border rounded"/>
+                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">Tạo</button>
+            </form>
+        </section>
+
+        <!-- Group list -->
+        <section>
+            <h4 class="text-md font-bold mb-2">Nhóm của bạn</h4>
+            <ul id="groupList" class="space-y-2 bg-white p-4 rounded shadow">
+                <!-- Nhóm sẽ được render bằng JS -->
+            </ul>
+        </section>
+
+        <!-- Chat box -->
+        <section class="flex-1 bg-white p-4 rounded shadow flex flex-col">
+            <div id="messages" class="flex-1 overflow-y-auto space-y-2 mb-4 px-2"></div>
+            <div id="chat-box" class="text-sm text-gray-500 mb-2">Đang trò chuyện...</div>
+            <form id="chatForm" class="flex space-x-2 items-center">
+                <input type="text" id="msgInput" placeholder="Nhập tin nhắn..." class="flex-1 p-2 border rounded" autocomplete="off"/>
+                <!-- Thêm ID để xử lý sự kiện -->
+                <button type="button" class="hidden bg-blue-200 rounded-md p-2 font-bold" id="btnAddMember">Thêm thành viên</button>
+                <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">Gửi</button>
+            </form>
+        </section>
+    </main>
+    <div class="absolute hidden top-0 flex items-center justify-center w-screen h-screen bg-black bg-opacity-40" id="addMemberModal">
+        <div class="p-4 bg-white rounded-lg flex flex-col items-center w-80">
+            <p class="text-lg font-semibold mb-2">Thêm thành viên</p>
+            <input type="text" id="addMemberInput" placeholder="Nhập ID thành viên..." class="w-full p-2 border rounded mb-2" autocomplete="off">
+            <div class="flex justify-between w-full space-x-2">
+                <button id="confirmAddMember" class="flex-1 bg-green-500 text-white py-2 rounded">Thêm</button>
+                <button id="cancelAddMember" class="flex-1 bg-gray-300 py-2 rounded">Hủy</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
+
+
+<script th:inline="javascript">
+    const userId = document.querySelector(".id-user").getAttribute("data-id")
+    console.log(userId)
+    const socket = io("http://localhost:3000", {
+        query: { userId: userId },
+        transports: ['websocket', 'polling'],  // Cấu hình sử dụng WebSocket trước, sau đó fallback tới polling
+    });
+    socket.on('connect', () => {
+        console.log("Connected to server with userId:", userId);
+    });
+    let currentChatUser = null;
+    let currentGroupId = null;
+
+    document.querySelectorAll(".user-item").forEach(item => {
+        item.addEventListener("click", () => {
+            currentChatUser = item.dataset.id;
+            currentGroupId = null;
+            document.getElementById("messages").innerHTML = "";
+            Promise.all([
+                fetch(`/api/messages/private/${currentChatUser}?currentUserId=${userId}`).then(res => res.json()),
+                fetch(`/api/messages/private/${userId}?currentUserId=${currentChatUser}`).then(res => res.json()),
+            ])
+                .then(([sentMessages, receivedMessages]) => {
+                    const allMessages = [...sentMessages, ...receivedMessages];
+                    allMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                    const messagesContainer = document.getElementById("messages");
+                    messagesContainer.innerHTML = ""; // Clear tin nhắn cũ nếu có
+
+                    allMessages.forEach(msg => {
+                        const el = document.createElement("div");
+                        el.classList.add("msg");
+
+                        const who = msg.senderId === userId ? "Bạn" : "Người kia";
+                        const timestamp = new Date(msg.timestamp).toLocaleString("vi-VN");
+
+                        el.innerHTML = `
+                            <div class="msg-header">
+                                <strong>${who}</strong> <small>${timestamp}</small>
+                            </div>
+                            <div class="msg-content">
+                                ${msg.content}
+                            </div>
+                        `;
+                        messagesContainer.appendChild(el);
+                    });
+                })
+                .catch(error => {
+                    console.error("Lỗi khi tải tin nhắn:", error);
+                });
+        });
+    });
+
+    document.getElementById("chatForm").addEventListener("submit", e => {
+        e.preventDefault();
+        const content = document.getElementById("msgInput").value.trim();
+        if (!content) return;
+        console.log(content)
+        if (currentChatUser) {
+            socket.emit("private_message", { from: userId, to: currentChatUser, content });
+        } else if (currentGroupId) {
+            socket.emit("group_message", { from: userId, groupId: currentGroupId, content });
+        }
+
+        document.getElementById("msgInput").value = "";
+    });
+
+    socket.on('new_private_message', (message) => {
+        console.log("📩 Tin nhắn mới:", message);
+    });
+    socket.on('new_group_message', (message) => {
+        console.log("📩 Tin nhắn mới:", message);
+    });
+
+    socket.on('new_private_message', (message) => {
+        console.log("📩 Tin nhắn mới:", message);
+
+        const chatBox = document.getElementById("chat-box");
+
+        const msgDiv = document.createElement("div");
+        msgDiv.innerText = `${message.senderId === userId ? 'Bạn' : 'Người khác'}: ${message.content}`;
+
+        chatBox.appendChild(msgDiv);
+    });
+    // Lấy nhóm của user khi load trang
+    fetch(`/group/user/${userId}`)
+        .then(res => res.json())
+        .then(groups => {
+            const groupList = document.getElementById("groupList");
+            groups.forEach(group => {
+                const li = document.createElement("li");
+                li.innerText = group.name;
+                li.dataset.id = group.id;
+                li.classList.add("group-item");
+                groupList.appendChild(li);
+            });
+
+            document.querySelectorAll(".group-item").forEach(item => {
+                item.addEventListener("click", () => {
+                    currentChatUser = null;
+                    currentGroupId = item.dataset.id;
+                    document.getElementById("messages").innerHTML = "";
+                    document.getElementById("btnAddMember").classList.remove("hidden")
+                    // Mở form khi nhấn nút "Thêm thành viên"
+                    document.getElementById("btnAddMember").addEventListener("click", () => {
+                        document.getElementById("addMemberModal").classList.remove("hidden");
+                    });
+
+                    // Hủy thêm thành viên
+                    document.getElementById("cancelAddMember").addEventListener("click", () => {
+                        document.getElementById("addMemberModal").classList.add("hidden");
+                        document.getElementById("addMemberInput").value = "";
+                    });
+
+                    // Xác nhận thêm thành viên
+                    document.getElementById("confirmAddMember").addEventListener("click", () => {
+                        const memberId = document.getElementById("addMemberInput").value.trim();
+                        const listMember = memberId.split(",")
+                        if (!memberId || !currentGroupId) return alert("Vui lòng nhập ID hợp lệ");
+
+                        fetch(`/group/${currentGroupId}/members`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(listMember)
+                        })
+                            .then(res => {
+                                if (!res.ok) throw new Error("Thêm thất bại");
+                                return res.json();
+                            })
+                            .then(data=>{
+                                alert(`Đã thêm thành viên vào nhóm: ${data.name || "Thành công"}`);
+                                document.getElementById("addMemberModal").classList.add("hidden");
+                                document.getElementById("addMemberInput").value = "";
+                            })
+
+                    });
+                    // TODO: fetch old group messages
+                    fetch(`/api/messages/group/${currentGroupId}`).then(res => res.json())
+                        .then((msgs) => {
+                            msgs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                            const messagesContainer = document.getElementById("messages");
+                            messagesContainer.innerHTML = ""; // Clear tin nhắn cũ nếu có
+
+                            msgs.forEach(msg => {
+                                const el = document.createElement("div");
+                                el.classList.add("msg");
+
+                                const who = msg.senderId === userId ? "Bạn" : "Người kia";
+                                const timestamp = new Date(msg.timestamp).toLocaleString("vi-VN");
+
+                                el.innerHTML = `
+                            <div class="msg-header">
+                                <strong>${who}</strong> <small>${timestamp}</small>
+                            </div>
+                            <div class="msg-content">
+                                ${msg.content}
+                            </div>
+                        `;
+                                messagesContainer.appendChild(el);
+                            });
+                        })
+                        .catch(error => {
+                            console.error("Lỗi khi tải tin nhắn:", error);
+                        });
+                });
+            });
+        });
+
+    // Tạo nhóm mới
+    document.getElementById("createGroupForm").addEventListener("submit", e => {
+        e.preventDefault();
+        const name = document.getElementById("groupName").value.trim();
+        const memberStr = document.getElementById("groupMembers").value.trim();
+        if (!name) return;
+
+        const members = memberStr ? memberStr.split(",").map(s => s.trim()) : [];
+        const payload = {
+            name: name,
+            creatorId: userId,
+            memberIds: members
+        };
+
+        fetch("/group", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        })
+            .then(res => res.json())
+            .then(group => {
+                alert("Tạo nhóm thành công: " + group.name);
+                location.reload();
+            });
+    });
+
+    // Gửi tin nhắn nhóm
+    document.getElementById("chatForm").addEventListener("submit", e => {
+        e.preventDefault();
+        const input = document.getElementById("msgInput");
+        const content = input.value.trim();
+        if (!content) return;
+
+        if (currentChatUser) {
+            socket.emit("private_message", { from: userId, to: currentChatUser, content });
+        } else if (currentGroupId) {
+            socket.emit("group_message", { from: userId, groupId: currentGroupId, content });
+        }
+
+        input.value = "";
+    });
+
+    // Nhận tin nhắn nhóm
+    socket.on("new_group_message", (msg) => {
+        console.log("📩 Tin nhắn mới:", msg);
+
+        if (msg.groupId === currentGroupId) {
+            const el = document.createElement("div");
+            el.classList.add("msg");
+            el.innerText = `${msg.senderId === userId ? "Bạn" : "Người khác"}: ${msg.content}`;
+            document.getElementById("messages").appendChild(el);
+        }
+    });
+
+</script>
+</body>
+</html>
