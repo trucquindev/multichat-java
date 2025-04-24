@@ -5,11 +5,12 @@
     <title>Chat App</title>
     <link rel="stylesheet" href="/css/style.css" />
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"/>
 </head>
 <body>
 <div class="flex h-screen relative">
     <!-- Sidebar -->
-    <aside class="w-1/4 bg-white shadow-md p-4 flex flex-col">
+    <aside class="w-[20%] bg-blue-200 shadow-md p-4 flex flex-col rounded-lg shadow-lg m-2">
         <h2 class="text-lg font-bold mb-4 id-user" th:text="'Xin chào, ' + ${session.user.username}" th:data-id="${session.user.id}">Xin chào</h2>
 
         <!-- User list -->
@@ -19,18 +20,19 @@
                 <li th:each="u : ${users}" th:data-id="${u.id}" class="user-item flex items-center space-x-3 p-2 hover:bg-gray-100 rounded cursor-pointer transition">
                     <img th:if="${u.avatarUrl != null}" th:src="@{${u.avatarUrl}}" class="w-8 h-8 rounded-full"/>
                     <img th:unless="${u.avatarUrl != null}" th:src="@{/image/default.png}" class="w-8 h-8 rounded-full"/>
-                    <span th:text="${u.username}" class="text-sm font-medium">Username</span>
+                    <span th:text="${u.username}" class="text-sm font-medium" th:username ="${u.username}" id="spanUsername" >Username</span>
                 </li>
             </ul>
+            <img class="rounded-2xl mt-8 " src="https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExcmEwcmFkZ2cyNHlweXdobHZreXlzM2kxZGRveDJ3bXducWdrZW5uaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/smMsPyclfuViqWouFR/giphy.gif" alt="fun gift">
         </div>
         <!-- Logout -->
-        <a href="/logout" class="mt-auto text-blue-500 text-sm hover:underline">Đăng xuất</a>
+        <a href="/logout" class="mt-auto text-blue-500 text-sm hover:underline w-full bg-red-500 p-3 rounded-lg font-bold text-white text-center">Đăng xuất <i class="fa-solid fa-right-from-bracket ml-2"></i></a>
     </aside>
 
     <!-- Main content -->
     <main class="flex-1 p-6 space-y-6">
         <!-- Group creation form -->
-        <section class="bg-white p-4 rounded shadow">
+        <section class="p-4 rounded shadow-lg bg-blue-200">
             <h4 class="text-md font-bold mb-2">Tạo nhóm mới</h4>
             <form id="createGroupForm" class="flex flex-col sm:flex-row sm:space-x-4 space-y-2 sm:space-y-0">
                 <input type="text" id="groupName" placeholder="Tên nhóm" required class="flex-1 px-3 py-2 border rounded"/>
@@ -49,8 +51,8 @@
 
         <!-- Chat box -->
         <section class="flex-1 bg-white p-4 rounded shadow flex flex-col">
-            <div id="messages" class="flex-1 overflow-y-auto space-y-2 mb-4 px-2"></div>
-            <div id="chat-box" class="text-sm text-gray-500 mb-2">Đang trò chuyện...</div>
+            <div id="messages" class="max-h-[40vh] overflow-y-auto space-y-2 mb-4 px-2 scroll-smooth"></div>
+<!--            <div id="chat-box" class="text-sm text-gray-500 mb-2 flex-col">Đang trò chuyện...</div>-->
             <form id="chatForm" class="flex space-x-2 items-center">
                 <input type="text" id="msgInput" placeholder="Nhập tin nhắn..." class="flex-1 p-2 border rounded" autocomplete="off"/>
                 <!-- Thêm ID để xử lý sự kiện -->
@@ -78,7 +80,7 @@
 <script th:inline="javascript">
     const userId = document.querySelector(".id-user").getAttribute("data-id")
     console.log(userId)
-    const socket = io("https://multichat-java-production.up.railway.app", {
+    const socket = io("http://localhost:3000", {
         query: { userId: userId },
         transports: ['websocket', 'polling'],  // Cấu hình sử dụng WebSocket trước, sau đó fallback tới polling
     });
@@ -87,9 +89,15 @@
     });
     let currentChatUser = null;
     let currentGroupId = null;
-
+    let valueState = ""
     document.querySelectorAll(".user-item").forEach(item => {
         item.addEventListener("click", () => {
+            document.querySelectorAll(".user-item").forEach(i => {
+                i.classList.remove("bgGrey");
+            });
+            const username= item.querySelector("#spanUsername").getAttribute("username")
+
+            item.classList.add("bgGrey")
             currentChatUser = item.dataset.id;
             currentGroupId = null;
             document.getElementById("messages").innerHTML = "";
@@ -106,9 +114,12 @@
 
                     allMessages.forEach(msg => {
                         const el = document.createElement("div");
-                        el.classList.add("msg");
+                        const isSelf = msg.senderId === userId;
 
-                        const who = msg.senderId === userId ? "Bạn" : "Người kia";
+                        el.classList.add("msg");
+                        el.classList.add(isSelf ? "msg-self" : "msg-other");
+
+                        const who = isSelf ? "Bạn" : username;
                         const timestamp = new Date(msg.timestamp).toLocaleString("vi-VN");
 
                         el.innerHTML = `
@@ -119,8 +130,11 @@
                                 ${msg.content}
                             </div>
                         `;
+
                         messagesContainer.appendChild(el);
                     });
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
                 })
                 .catch(error => {
                     console.error("Lỗi khi tải tin nhắn:", error);
@@ -143,22 +157,33 @@
     });
 
     socket.on('new_private_message', (message) => {
-        console.log("📩 Tin nhắn mới:", message);
-    });
-    socket.on('new_group_message', (message) => {
-        console.log("📩 Tin nhắn mới:", message);
-    });
+        const chatBox = document.getElementById("messages"); // phải là flex-col để style hoạt động
 
-    socket.on('new_private_message', (message) => {
-        console.log("📩 Tin nhắn mới:", message);
-
-        const chatBox = document.getElementById("chat-box");
+        const isSelf = message.senderId === userId;
 
         const msgDiv = document.createElement("div");
-        msgDiv.innerText = `${message.senderId === userId ? 'Bạn' : 'Người khác'}: ${message.content}`;
+        msgDiv.classList.add("msg");
+        msgDiv.classList.add(isSelf ? "msg-self" : "msg-other");
+
+        const who = isSelf ? "Bạn" : "Người kia";
+        const timestamp = new Date(message.timestamp).toLocaleString("vi-VN");
+
+        msgDiv.innerHTML = `
+            <div class="msg-header">
+                <strong>${who}</strong> <small>${timestamp}</small>
+            </div>
+            <div class="msg-content">
+                ${message.content}
+            </div>
+        `;
 
         chatBox.appendChild(msgDiv);
+
+        // Auto scroll xuống cuối
+        chatBox.scrollTop = chatBox.scrollHeight;
     });
+
+
     // Lấy nhóm của user khi load trang
     fetch(`/group/user/${userId}`)
         .then(res => res.json())
@@ -217,25 +242,31 @@
                             msgs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
                             const messagesContainer = document.getElementById("messages");
+
                             messagesContainer.innerHTML = ""; // Clear tin nhắn cũ nếu có
 
                             msgs.forEach(msg => {
                                 const el = document.createElement("div");
-                                el.classList.add("msg");
+                                const isSelf = msg.senderId === userId;
 
-                                const who = msg.senderId === userId ? "Bạn" : "Người kia";
+                                el.classList.add("msg");
+                                el.classList.add(isSelf ? "msg-self" : "msg-other");
+
+                                const who = isSelf ? "Bạn" : "Ẩn danh";
                                 const timestamp = new Date(msg.timestamp).toLocaleString("vi-VN");
 
                                 el.innerHTML = `
-                            <div class="msg-header">
-                                <strong>${who}</strong> <small>${timestamp}</small>
-                            </div>
-                            <div class="msg-content">
-                                ${msg.content}
-                            </div>
-                        `;
+                                    <div class="msg-header">
+                                        <strong>${who}</strong> <small>${timestamp}</small>
+                                    </div>
+                                    <div class="msg-content">
+                                        ${msg.content}
+                                    </div>
+                                `;
+
                                 messagesContainer.appendChild(el);
                             });
+                            messagesContainer.scrollTop = messagesContainer.scrollHeight;
                         })
                         .catch(error => {
                             console.error("Lỗi khi tải tin nhắn:", error);
@@ -291,10 +322,36 @@
         console.log("📩 Tin nhắn mới:", msg);
 
         if (msg.groupId === currentGroupId) {
-            const el = document.createElement("div");
-            el.classList.add("msg");
-            el.innerText = `${msg.senderId === userId ? "Bạn" : "Người khác"}: ${msg.content}`;
-            document.getElementById("messages").appendChild(el);
+            // const el = document.createElement("div");
+            // el.classList.add("msg");
+            // el.innerText = `${msg.senderId === userId ? "Bạn" : "Người khác"}: ${msg.content}`;
+            // document.getElementById("messages").appendChild(el);
+
+
+            const chatBox = document.getElementById("messages"); // phải là flex-col để style hoạt động
+
+            const isSelf = msg.senderId === userId;
+
+            const msgDiv = document.createElement("div");
+            msgDiv.classList.add("msg");
+            msgDiv.classList.add(isSelf ? "msg-self" : "msg-other");
+
+            const who = isSelf ? "Bạn" : "Người kia";
+            const timestamp = new Date(msg.timestamp).toLocaleString("vi-VN");
+
+            msgDiv.innerHTML = `
+            <div class="msg-header">
+                <strong>${who}</strong> <small>${timestamp}</small>
+            </div>
+            <div class="msg-content">
+                ${msg.content}
+            </div>
+        `;
+
+            chatBox.appendChild(msgDiv);
+
+            // Auto scroll xuống cuối
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
     });
 
