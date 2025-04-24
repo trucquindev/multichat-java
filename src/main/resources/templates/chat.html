@@ -80,7 +80,7 @@
 <script th:inline="javascript">
     const userId = document.querySelector(".id-user").getAttribute("data-id")
     console.log(userId)
-    const socket = io("https://multichat-java-production.up.railway.app/", {
+    const socket = io("https://multichat-java-production.up.railway.app", {
         path: "/socket.io",
         query: { userId: userId },
         transports: ['websocket', 'polling'],  // Cấu hình sử dụng WebSocket trước, sau đó fallback tới polling
