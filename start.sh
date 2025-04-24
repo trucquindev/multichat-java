@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Start Spring Boot in background
-java -jar target/*.jar &
+# Start Spring Boot (nền)
+java -jar /app/app.jar &
 
-# Start nginx in foreground
+# Start nginx (foreground)
 nginx -g 'daemon off;'
