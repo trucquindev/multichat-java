@@ -20,8 +20,7 @@ public class ChatSocketServer {
     public void init() {
         Configuration config = new Configuration();
         config.setHostname("0.0.0.0");
-        int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "3000"));
-        config.setPort(port);
+        config.setPort(3000);
         config.setOrigin("*");
         config.setAllowCustomRequests(true);
 
