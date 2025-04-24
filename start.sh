@@ -1,7 +1,10 @@
 #!/bin/bash
 
-# Start Spring Boot (nền)
+# Start app
 java -jar /app/app.jar &
 
-# Start nginx (foreground)
+# Đợi 10s cho app boot xong
+sleep 10
+
+# Start nginx
 nginx -g 'daemon off;'
